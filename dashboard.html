@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRACEWATCH — Giám sát rửa tiền trên Blockchain</title>
+<script src="https://unpkg.com/vis-network@9.1.2/standalone/umd/vis-network.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --void: #0A0E14;
+    --surface: #131826;
+    --surface-raised: #171E2E;
+    --border: #1F2635;
+    --text: #E8ECF4;
+    --text-muted: #8792A8;
+    --text-faint: #4B5468;
+    --alert: #FF5F56;
+    --alert-dim: #3D2224;
+    --confirm: #00D4B8;
+    --confirm-dim: #0F2E2A;
+    --info: #5B8DEF;
+    --info-dim: #1A2740;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(91,141,239,0.10), transparent),
+      radial-gradient(ellipse 700px 500px at 100% 0%, rgba(0,212,184,0.06), transparent),
+      var(--void);
+    color: var(--text);
+    margin: 0;
+    padding: 0 0 60px 0;
+    min-height: 100vh;
+  }
+
+  a { color: var(--info); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+
+  /* ===== Top bar ===== */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(19,24,38,0.6);
+    backdrop-filter: blur(8px);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--info), var(--confirm));
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--void);
+  }
+  .brand-name {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 17px;
+    letter-spacing: 0.02em;
+  }
+  .brand-sub { font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+  .status-pill {
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--confirm);
+    padding: 6px 12px; border: 1px solid var(--confirm-dim); border-radius: 20px;
+    background: var(--confirm-dim);
+  }
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--confirm);
+    box-shadow: 0 0 8px var(--confirm);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+
+  .eyebrow {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.12em;
+    color: var(--text-faint); text-transform: uppercase; margin: 40px 0 8px 0;
+  }
+  .page-title {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 30px;
+    margin: 0 0 32px 0; letter-spacing: -0.01em;
+  }
+
+  /* ===== Stat strip ===== */
+  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 40px; }
+  .stat-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; position: relative; overflow: hidden;
+  }
+  .stat-box::before {
+    content: ""; position: absolute; top: 0; left: 0; width: 3px; height: 100%;
+    background: var(--stat-accent, var(--info));
+  }
+  .stat-box .label {
+    font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px;
+  }
+  .stat-box .num {
+    font-family: 'Space Grotesk', sans-serif; font-size: 34px; font-weight: 700;
+    color: var(--stat-accent, var(--text));
+  }
+
+  /* ===== Cards ===== */
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px 24px; margin-bottom: 24px;
+  }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+  .card-title {
+    font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 600; margin: 0;
+  }
+  .card-note { font-size: 12.5px; color: var(--text-muted); margin: 4px 0 16px 0; }
+
+  /* ===== Evidence board (network graph) ===== */
+  .board {
+    border: 1px dashed var(--border); border-radius: 10px; padding: 12px;
+    background:
+      linear-gradient(var(--surface-raised) 1px, transparent 1px) 0 0 / 100% 24px,
+      var(--surface-raised);
+    background-blend-mode: overlay;
+  }
+  #network { width: 100%; height: 380px; border-radius: 8px; }
+  .legend { display: flex; gap: 20px; margin-top: 12px; font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  /* ===== Tables ===== */
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-faint); font-weight: 500; padding: 0 12px 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody td {
+    padding: 12px; font-size: 13.5px; border-bottom: 1px solid var(--border); vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  .case-id {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-faint);
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+  .hash-link { display: inline-flex; align-items: center; gap: 6px; }
+
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 0.03em; text-transform: uppercase;
+  }
+  .badge.illicit { background: var(--alert-dim); color: var(--alert); }
+  .badge.licit { background: var(--confirm-dim); color: var(--confirm); }
+  .badge.confirmed { background: var(--info-dim); color: var(--info); }
+
+  .conf-bar {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .conf-track {
+    width: 70px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden;
+  }
+  .conf-fill { height: 100%; background: var(--alert); border-radius: 3px; }
+  .conf-num { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-muted); min-width: 38px; }
+
+  .empty-row td {
+    text-align: center; color: var(--text-faint); font-size: 13px; padding: 28px 12px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  @media (max-width: 720px) {
+    .stat-row { grid-template-columns: 1fr; }
+    .wrap { padding: 0 16px; }
+    .topbar { padding: 14px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">TW</div>
+    <div>
+      <div class="brand-name">TRACEWATCH</div>
+      <div class="brand-sub">AML // BLOCKCHAIN FORENSICS</div>
+    </div>
+  </div>
+  <div class="status-pill"><span class="status-dot"></span> SEPOLIA LIVE</div>
+</div>
+
+<div class="wrap">
+  <div class="eyebrow">Bảng điều khiển giám sát</div>
+  <h1 class="page-title">Phát hiện &amp; truy vết giao dịch rửa tiền</h1>
+
+  <div class="stat-row" id="statRow"></div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2 class="card-title">Bảng chứng cứ — chuỗi giao dịch nghi ngờ</h2>
+    </div>
+    <p class="card-note">Mỗi đường nối thể hiện dòng tiền chuyển tiếp giữa hai giao dịch được gắn nhãn bất hợp pháp.</p>
+    <div class="board"><div id="network"></div></div>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--alert)"></span> Điểm khởi phát</span>
+      <span><span class="dot" style="background:#ff8a65"></span> Giao dịch nối tiếp</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="card-title">Hồ sơ đã ghi lên Blockchain</h2></div>
+    <p class="card-note">Bất biến — không thể chỉnh sửa hoặc xóa sau khi xác nhận trên Sepolia.</p>
+    <table id="reportsTable">
+      <thead><tr><th>Hồ sơ</th><th>Tx ID</th><th>Lý do</th><th>Trạng thái</th><th>Mã giao dịch chain</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="card-title">Chuỗi nghi ngờ phát hiện được</h2></div>
+    <p class="card-note">Kết quả phân tích đồ thị mạng lưới, lưu trong cơ sở dữ liệu vận hành.</p>
+    <table id="chainsTable">
+      <thead><tr><th>ID</th><th>Độ dài chuỗi</th><th>Giao dịch khởi phát</th><th>Thời điểm phát hiện</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2 class="card-title">Dự đoán từ mô hình AI</h2></div>
+    <p class="card-note">Random Forest — độ tin cậy phân loại cho các giao dịch nghi ngờ gần nhất.</p>
+    <table id="predictionsTable">
+      <thead><tr><th>Tx ID</th><th>Nhãn</th><th>Độ tin cậy</th><th>Mô hình</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API_BASE = "http://127.0.0.1:5000";
+
+function emptyRow(cols, text) {
+  return `<tr class="empty-row"><td colspan="${cols}">${text}</td></tr>`;
+}
+
+function copyToClipboard(text, el) {
+  navigator.clipboard.writeText(text).then(() => {
+    const original = el.textContent;
+    el.textContent = "✓ đã copy";
+    setTimeout(() => { el.textContent = original; }, 1200);
+  });
+}
+
+async function loadStats() {
+  const [chains, reports, blockchain] = await Promise.all([
+    fetch(`${API_BASE}/api/suspicious-chains`).then(r => r.json()),
+    fetch(`${API_BASE}/api/reports`).then(r => r.json()),
+    fetch(`${API_BASE}/api/blockchain/reports`).then(r => r.json())
+  ]);
+
+  document.getElementById("statRow").innerHTML = `
+    <div class="stat-box" style="--stat-accent:var(--alert)">
+      <div class="label">Chuỗi nghi ngờ phát hiện</div>
+      <div class="num">${chains.length}</div>
+    </div>
+    <div class="stat-box" style="--stat-accent:var(--info)">
+      <div class="label">Hồ sơ lưu vận hành</div>
+      <div class="num">${reports.length}</div>
+    </div>
+    <div class="stat-box" style="--stat-accent:var(--confirm)">
+      <div class="label">Hồ sơ xác nhận trên Blockchain</div>
+      <div class="num">${blockchain.total}</div>
+    </div>
+  `;
+}
+
+async function loadReports() {
+  const res = await fetch(`${API_BASE}/api/reports`);
+  const data = await res.json();
+  const tbody = document.querySelector("#reportsTable tbody");
+  if (!data.length) { tbody.innerHTML = emptyRow(5, "Chưa có hồ sơ nào được ghi."); return; }
+  tbody.innerHTML = data.map((r, i) => `
+    <tr>
+      <td class="case-id">#${String(data.length - i).padStart(3, "0")}</td>
+      <td class="mono">${r.tx_id}</td>
+      <td>${r.reason}</td>
+      <td><span class="badge confirmed">${r.status}</span></td>
+      <td>
+        <span class="hash-link">
+          <a href="https://sepolia.etherscan.io/tx/${r.blockchain_tx_hash}" target="_blank" class="mono">${r.blockchain_tx_hash.slice(0,14)}…</a>
+          <button onclick="copyToClipboard('${r.blockchain_tx_hash}', this)" class="mono" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:11px;">copy</button>
+        </span>
+      </td>
+    </tr>
+  `).join("");
+}
+
+async function loadChains() {
+  const res = await fetch(`${API_BASE}/api/suspicious-chains`);
+  const data = await res.json();
+  const tbody = document.querySelector("#chainsTable tbody");
+  if (!data.length) { tbody.innerHTML = emptyRow(4, "Chưa phát hiện chuỗi nào."); return data; }
+  tbody.innerHTML = data.map(c => `
+    <tr>
+      <td class="case-id">${c.id}</td>
+      <td><span class="badge illicit">${c.chain_length} giao dịch</span></td>
+      <td class="mono">${c.tx_id_list[0]}</td>
+      <td class="mono">${new Date(c.detected_at).toLocaleString("vi-VN")}</td>
+    </tr>
+  `).join("");
+  return data;
+}
+
+async function loadPredictions() {
+  const res = await fetch(`${API_BASE}/api/predictions?label=illicit`);
+  const data = await res.json();
+  const tbody = document.querySelector("#predictionsTable tbody");
+  if (!data.length) { tbody.innerHTML = emptyRow(4, "Chưa có dự đoán nào."); return; }
+  tbody.innerHTML = data.slice(0, 20).map(p => {
+    const pct = (p.confidence_score * 100).toFixed(1);
+    return `
+    <tr>
+      <td class="mono">${p.tx_id}</td>
+      <td><span class="badge ${p.predicted_label}">${p.predicted_label}</span></td>
+      <td>
+        <div class="conf-bar">
+          <div class="conf-track"><div class="conf-fill" style="width:${pct}%"></div></div>
+          <span class="conf-num">${pct}%</span>
+        </div>
+      </td>
+      <td class="mono" style="color:var(--text-muted)">${p.model_version}</td>
+    </tr>`;
+  }).join("");
+}
+
+function drawNetwork(chains) {
+  const nodes = [];
+  const edges = [];
+  const seen = new Set();
+
+  chains.slice(0, 3).forEach((chain) => {
+    const ids = chain.tx_id_list.slice(0, 15);
+    ids.forEach((txId, i) => {
+      const nodeId = String(txId);
+      if (!seen.has(nodeId)) {
+        seen.add(nodeId);
+        nodes.push({
+          id: nodeId,
+          label: nodeId.slice(-4),
+          color: { background: i === 0 ? "#FF5F56" : "#3A2A28", border: i === 0 ? "#FF5F56" : "#ff8a65" },
+          font: { color: "#E8ECF4", face: "JetBrains Mono", size: 11 }
+        });
+      }
+      if (i > 0) edges.push({ from: String(ids[i-1]), to: nodeId, arrows: "to", color: "#2A3245" });
+    });
+  });
+
+  const container = document.getElementById("network");
+  if (!nodes.length) {
+    container.innerHTML = '<p style="color:var(--text-faint);font-family:JetBrains Mono, monospace;font-size:13px;padding:20px;">Chưa có dữ liệu chuỗi để hiển thị.</p>';
+    return;
+  }
+  const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+  const options = {
+    nodes: { shape: "dot", size: 13, borderWidth: 2 },
+    edges: { width: 1.5, smooth: { type: "continuous" } },
+    physics: { stabilization: true },
+    interaction: { hover: true }
+  };
+  new vis.Network(container, data, options);
+}
+
+async function init() {
+  await loadStats();
+  const chains = await loadChains();
+  await loadReports();
+  await loadPredictions();
+  drawNetwork(chains);
+}
+
+init();
+</script>
+
+</body>
+</html>
